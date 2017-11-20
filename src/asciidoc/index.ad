@@ -1,0 +1,173 @@
+= React using the Asset Pipeline
+
+== Install the plugin
+
+We will be using the
+
+In the `build.gradle` file, add the following lines to the `buildscript` section:
+
+```
+buildscript {
+    repositories {
+        //...
+        jcenter()
+    }
+    dependencies {
+        //...
+        classpath "com.bertramlabs.plugins:asset-pipeline-gradle:2.14.6" //<1>
+        classpath 'com.craigburke.gradle:client-dependencies:1.4.0'
+    }
+}
+
+
+apply plugin: 'com.craigburke.client-dependencies'
+
+```
+<1> Note that we've upgraded the asset-pipeline plugin to the latest version, 2.14.6 as of time of writing
+
+In the main `dependencies` section, add/edit the following lines:
+
+```
+    runtime "com.bertramlabs.plugins:asset-pipeline-grails:2.14.6" //<1>
+    assets 'com.bertramlabs.plugins:jsx-asset-pipeline:2.14.6' //<2>
+```
+<1> Again, note that we've upgraded the default asset-pipeline version.
+<2> The JSX asset pipeline plugin will parse our React/JSX files (any files including the `jsx` file extension) and make them available like any other asset
+
+== Including dependencies
+
+The client-dependencies plugin is a great fit for the JSX asset pipeline plugin, because it allows us to declaratively include frontend libraries/dependencies without needing to install any native JavaScript build tools.
+
+Add the following lines to the `build.gradle` file to pull in the React, ReactDOM, and Bootstrap libraries to our project.
+
+```
+clientDependencies {
+    npm {
+        'bootstrap'('3.3.6')
+        'react-bootstrap'('0.30.3')
+        'react'('15.2.1')
+        'react-dom'('15.2.1')
+    }
+    installDir = 'grails-app/assets/vendor'
+}
+```
+
+As the `installDir` value suggests, these libraries, and their associated dependencies, will be installed under `grails-app/assets/vendor`. We are using the `npm` source for these dependencies - other options include `bower` and `yarn`.
+
+== Configure JSX/ES6
+
+We will be using ES6-level JavaScript in this demo, so we have to configure the asset-pipeline to process the newer syntax. In `build.gradle`, edit the existing `assets` block as shown below:
+
+```
+assets {
+    excludes = ['**/*.js']
+    includes = ['application.jsx.es6']
+    minifyJs = false
+
+    configOptions = [
+            enableES6: true
+    ]
+}
+
+```
+
+This configuration will cause the asset-pipeline plugin to process ES6 level code, and will also disable processing of all the files in our `assets` directory by default (files with the extension of `es6` will still be processed). This is important because we don't want to run our entire dependency tree through the ES6 processor, only our own code.
+
+The final configuration change will be made in `application.yml`. Set the `grails.assets.enableES6` property to `true`:
+
+```
+grails:
+    assets:
+        enableES6: true
+```
+
+== Write the React component
+
+Create a new file named `Greeting.jsx.es6`. Note the "double" file extension - this is to tell the asset-pipeline to process this file as both JSX and ES6-level code.
+
+```
+import React from 'react';
+import Bootstrap from 'react-bootstrap'; //<1>
+
+class Greeting extends React.Component {
+
+  constructor() {
+    super();
+    this.state = {
+      show: false,
+      greeting: 'Hello world!'
+    };
+
+    this.handleChange = this.handleChange.bind(this); //<2>
+    this.updateGreeting = this.updateGreeting.bind(this);
+    this.toggleShow = this.toggleShow.bind(this);
+  }
+
+  handleChange(e) { this.setState({greeting: e.target.value})}
+
+  updateGreeting() { this.setState({show: false})}
+
+  toggleShow() { this.setState({show: !this.state.show})}
+
+  render() {
+
+    const {Modal, Button} = Bootstrap; //<1>
+
+    return this.state.show ? <Modal.Dialog bsSize='small'>
+      <Modal.Header>
+        Greeting Component
+        <Button onClick={this.toggleShow} className='pull-right'>X</Button>
+      </Modal.Header>
+
+      <Modal.Body>
+        <input type='text' value={this.state.greeting} onChange={this.handleChange}/>
+      </Modal.Body>
+
+      <Modal.Footer>
+        <Button onClick={this.updateGreeting}>Update Greeting</Button>
+      </Modal.Footer>
+
+    </Modal.Dialog> : <Button bsStyle='success' onClick={this.toggleShow}>Launch Greeting</Button>
+  }
+}
+
+export default Greeting;
+```
+<1> Note that the asset-pipeline does not currently support destructuring in `import` statements, so instead of impoting `{Modal, Button}` and using the components directly, we have to import the entire `react-bootstrap` module and then use destructuring to "pull out" the components we need.
+<2> Note that the asset-pipeline does not currently support the https://github.com/tc39/proposal-class-fields["class fields"] syntax for specifying methods as arrow functions (closures). This means that we must call `bind` explicitly to set the correct scope of the method, which we do in our component constructor.
+
+NOTE: In most modern React apps (including those created using the `create-react-app` CLI) class fields are supported by default, and it is very rare to use `bind` directly. However, you will encounter it in older React code, and it may be helpful to understand the reasoning. For more information on `bind` and how JavaScript handles `this` scope, see this URL: https://github.com/getify/You-Dont-Know-JS/blob/master/this%20%26%20object%20prototypes/ch2.md#lexical-this
+
+== Link in our component
+
+Rename the file `grails-app/assets/javascripts/application.js` to `application.jsx.es6`, and replace its contents with the following:
+
+```
+//= require_self
+
+import $ from 'jquery';
+import jQuery from 'jquery';
+window.$ = $;
+window.jQuery = jQuery;
+
+import React from 'react';
+import ReactDOM from 'react-dom'
+import Greeting from 'Greeting';
+
+ReactDOM.render(<Greeting />, document.getElementById('root'));
+```
+
+In `main.gsp`, find the `<asset:javascript>` tag that loads the `application.js` file, and change the name there to match the new file name.
+
+In `index.gsp`, add the following HTML somewhere in the body of the page:
+
+```
+<div id="root"></div>
+```
+
+== Running the app
+
+Start up the app using `./gradlew bootRun`. Once the dependencies are downloaded, the app should run on `http://localhost:8080`.
+
+
+image::app.png[width=750]
